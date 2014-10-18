@@ -9,7 +9,7 @@ output:
 
 ## Loading and preprocessing the data
 ```{r}
-library(dplyr)
+require(dplyr)
 str(df.raw <- unz(
   'activity.zip'
   ,'activity.csv'
@@ -54,7 +54,6 @@ df.raw$workweek %>%
 ```
 
 
-
 ## What is mean total number of steps taken per day?
 ```{r}
 str(df.day <- df.raw %>%
@@ -76,7 +75,6 @@ print(steps.per.day.median <- median(df.day$steps_total, na.rm=TRUE))
 ```
   * Mean number of steps per day prior to imputation was `r steps.per.day.mean`
   * Median number of steps per day prior to imputation was `r steps.per.day.median`
-
 
 
 ## What is the average daily activity pattern?
@@ -105,13 +103,15 @@ abline(v=interval.max.steps,lty=3,col='red')
 
 ## Imputing missing values
   * There are `r sum(is.na(df.raw$steps))` rows with missing values.
+  * Since only one variable has missing values, imputation was done as a classic supervised learning problem.
+  * A Random Forest algorithm was used to learn from the observed step counts and predict the missing ones.
 ```{r}
 require(randomForestSRC)
 
 rf.fit <- rfsrc(
   steps ~ .
   ,data=df.raw %>% filter(!is.na(steps)) %>% select(-date)
-  ,ntree=100
+  ,ntree=1000
   ,mtry=2
   )
 print(rf.fit)
@@ -131,6 +131,54 @@ summary(df.impute)
 ```
 
 
+### Now repeat the earlier day analysis of steps per day
+```{r}
+str(df.day.impute <- df.impute %>%
+  group_by(date) %>%
+  summarize(
+    steps_mean = mean(steps.filled)
+    ,steps_median = median(steps.filled)
+    ,steps_total = sum(steps.filled)
+    ) %>%
+  arrange(date))
+summary(df.day.impute)
+hist(
+  df.day.impute$steps_total
+  ,breaks=30
+  ,main='Histogram of Total Steps per Day\nWith Imputation'
+  )
+print(steps.per.day.impute.mean <- mean(df.day.impute$steps_total, na.rm=TRUE))
+print(steps.per.day.impute.median <- median(df.day.impute$steps_total, na.rm=TRUE))
+```
+  * Mean number of steps per day after imputation was `r steps.per.day.impute.mean`
+  * Median number of steps per day after imputation was `r steps.per.day.impute.median`
+  * Imputation increased the mean by `r steps.per.day.impute.mean - steps.per.day.mean` steps
+  * Imputation increased the median by `r steps.per.day.impute.median - steps.per.day.median` steps
+  * The summary statistics after imputation are noticeably higher than those prior to imputation.
 
 
 ## Are there differences in activity patterns between weekdays and weekends?
+```{r}
+require(ggplot2)
+require(scales)
+str(df.weekday <- df.impute %>%
+  group_by(workweek, interval) %>%
+  summarize(
+    steps_mean = mean(steps.filled)
+    ))
+plt.weekday <- df.weekday %>%
+  ggplot(aes(
+    x=interval
+    ,y=steps_mean
+    ,color=workweek
+    )) +
+  facet_wrap(~workweek, ncol=1) +
+  geom_line(size=1.5) +
+  scale_x_continuous('Interval') +
+  scale_y_continuous('Average Number of Steps') +
+  scale_color_discrete(guide='none') +
+  theme_light()
+plot(plt.weekday)
+```
+  * Weekend step patterns do not have as large of spike around interval `r interval.max.steps`
+  * Weekend step patterns rise above 100 steps per interval in more parts of the day.
