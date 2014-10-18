@@ -1,24 +1,135 @@
 ---
-title: "Reproducible Research: Peer Assessment 1"
-output: 
+title: 'Reproducible Research: Peer Assessment 1'
+output:
+  pdf_document: default
   html_document:
-    keep_md: true
+    keep_md: yes
 ---
 
 
 ## Loading and preprocessing the data
+```{r}
+library(dplyr)
+str(df.raw <- unz(
+  'activity.zip'
+  ,'activity.csv'
+  ) %>%
+  read.csv(  
+    colClasses=c(
+      'integer'
+      ,'Date'
+      ,'integer'
+      )
+    ) %>%
+  mutate(
+    weekday = factor(
+      weekdays(date, abbreviate=TRUE)
+      ,levels=c('Sun','Mon','Tue','Wed','Thu','Fri','Sat')
+      )
+    ,workweek = factor(ifelse(
+      weekday %in% c('Sat', 'Sun')
+      ,'weekend'
+      ,'weekday'
+      ))
+    ,date.int = as.integer(date)
+    ))
+summary(df.raw)
+hist(log1p(df.raw$steps), breaks='FD')
+hist(df.raw$date, breaks='day')
+hist(df.raw$interval, breaks='FD')
+df.raw$weekday %>%
+  table %>%
+  rev %>%
+  barplot(
+    horiz=TRUE
+    ,main='Day of Week Frequency'
+    )
+df.raw$workweek %>%
+  table %>%
+  sort %>%
+  barplot(
+    horiz=TRUE
+    ,main='Weekend Frequency'
+    )
+```
 
 
 
 ## What is mean total number of steps taken per day?
+```{r}
+str(df.day <- df.raw %>%
+  group_by(date) %>%
+  summarize(
+    steps_mean = mean(steps, na.rm=TRUE)
+    ,steps_median = median(steps, na.rm=TRUE)
+    ,steps_total = sum(steps, na.rm=TRUE)
+    ) %>%
+  arrange(date))
+summary(df.day)
+hist(
+  df.day$steps_total
+  ,breaks=30
+  ,main='Histogram of Total Steps per Day\nNo Imputation'
+  )
+print(steps.per.day.mean <- mean(df.day$steps_total, na.rm=TRUE))
+print(steps.per.day.median <- median(df.day$steps_total, na.rm=TRUE))
+```
+  * Mean number of steps per day prior to imputation was `r steps.per.day.mean`
+  * Median number of steps per day prior to imputation was `r steps.per.day.median`
 
 
 
 ## What is the average daily activity pattern?
-
+```{r}
+str(df.interval <- df.raw %>%
+  group_by(interval) %>%
+  summarize(
+    steps_mean = mean(steps, na.rm=TRUE)
+    ,steps_median = median(steps, na.rm=TRUE)
+    ,steps_total = sum(steps, na.rm=TRUE)
+    ) %>%
+  arrange(interval))
+with(df.interval,plot(
+  x=interval
+  ,y=steps_mean
+  ,type='l'
+  ,xlab='5-minute interval'
+  ,ylab='Mean Steps Taken'
+  ,main='Pattern of steps by time interval'
+  ))
+print(interval.max.steps <- with(df.interval, interval[which.max(steps_mean)]))
+abline(v=interval.max.steps,lty=3,col='red')
+```
+  * The 5-minute interval with the highest average steps taken was interval `r interval.max.steps`
 
 
 ## Imputing missing values
+  * There are `r sum(is.na(df.raw$steps))` rows with missing values.
+```{r}
+require(randomForestSRC)
+
+rf.fit <- rfsrc(
+  steps ~ .
+  ,data=df.raw %>% filter(!is.na(steps)) %>% select(-date)
+  ,ntree=100
+  ,mtry=2
+  )
+print(rf.fit)
+plot(rf.fit)
+
+print(rf.predict <- rf.fit %>%
+  predict(
+    newdata=df.raw %>% filter(is.na(steps)) %>% select(-date, -steps)
+    ))
+str(df.impute <- df.raw %>%
+  mutate(
+    steps.filled = steps
+    ,imputed = is.na(steps)
+    ))
+mean(df.impute$steps.filled[df.impute$imputed] <- rf.predict$predicted)
+summary(df.impute)
+```
+
 
 
 
